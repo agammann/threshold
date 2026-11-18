@@ -3,6 +3,49 @@ const specs = [
  {key:'step_cm',name:'Step height',criterion:'Maximum step height',description:'Highest step on the route',direction:'max'},
  {key:'turn_cm',name:'Turning space',criterion:'Minimum turning space',description:'Smallest space available to turn',direction:'min'}
 ];
-function compare(card,criteria,today=new Date()) {return specs.map(s=>{const m=card[s.key],c=criteria[s.key] ?? null, lines=[];const number=v=>typeof v==='number'&&Number.isFinite(v)&&v>=0;if(c!==null&&!number(c))lines.push('Invalid criterion: enter a non-negative number.');if(m!=null&&(typeof m!=='object'||Array.isArray(m)))lines.push('Invalid measurement object.');else if(m&&m.value!=null&&!number(m.value))lines.push('Invalid measurement: enter a non-negative number.');if(c===null)lines.push('No personal criterion supplied. Consider whether to ask about this.');if(m==null||(typeof m==='object'&&!Array.isArray(m)&&m.value==null))lines.push('Unknown measurement. Ask the venue for a measurement.');if(m&&number(m.value)&&number(c)){const meets=s.direction==='min'?m.value>=c:m.value<=c;lines.push(`${m.value} cm is ${meets?'within':'outside'} your ${c} cm criterion. Confirm the measurement before visiting.`)}if(m&&typeof m==='object'&&!Array.isArray(m)&&number(m.value)){const match=/^\d{4}-\d{2}-\d{2}$/.test(m.date||'');const parsed=match?new Date(m.date+'T00:00:00Z'):null;const valid=parsed&&!Number.isNaN(parsed.valueOf())&&parsed.toISOString().slice(0,10)===m.date;const age=valid?Math.floor((Date.UTC(today.getFullYear(),today.getMonth(),today.getDate())-parsed.valueOf())/86400000):null;if(!valid)lines.push('Date unknown or invalid. Ask when this was measured.');else if(age<0)lines.push(`Future date ${m.date}. Verify the date.`);else lines.push(`Measured ${m.date} (${age} days ago). ${age>365?'This is over a year old; ask for an update.':''}`);lines.push(m.source?`Source: ${m.source}`:'Source unknown. Ask how it was measured and whether a photo is available.')}return {name:s.name,lines}})}
+function parseMeasurementDate(value) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value) || value.startsWith('0000-')) return null;
+  const parsed = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(parsed.valueOf()) && parsed.toISOString().slice(0, 10) === value ? parsed : null;
+}
 
-if(typeof module!=='undefined')module.exports={compare,specs};
+function compare(card, criteria, today = new Date()) {
+  const validNumber = value => typeof value === 'number' && Number.isFinite(value) && value >= 0;
+  return specs.map(spec => {
+    const measurement = card[spec.key], criterion = criteria[spec.key] ?? null;
+    const validObject = measurement != null && typeof measurement === 'object' && !Array.isArray(measurement);
+    const value = validObject ? measurement.value : null;
+    const lines = [];
+    if (criterion === null) lines.push('No personal criterion supplied. Consider whether to ask about this.');
+    else if (!validNumber(criterion)) lines.push('Invalid criterion. Enter a non-negative number.');
+
+    if (measurement != null && !validObject) lines.push('Invalid measurement object.');
+    else if (value == null) lines.push('Unknown measurement. Ask the venue for a measurement.');
+    else if (!validNumber(value)) lines.push('Invalid measurement. Enter a non-negative number.');
+
+    if (validNumber(value)) {
+      if (validNumber(criterion)) {
+        const meets = spec.direction === 'min' ? value >= criterion : value <= criterion;
+        lines.push(`${value} cm is ${meets ? 'within' : 'outside'} your ${criterion} cm criterion. Confirm the measurement before visiting.`);
+      } else {
+        lines.push(`Measurement recorded as ${value} cm.`);
+      }
+      const measured = parseMeasurementDate(measurement.date);
+      if (measured === null) {
+        lines.push('Date unknown or invalid. Ask when this was measured.');
+      } else {
+        const age = Math.floor((Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()) - measured.valueOf()) / 86400000);
+        if (age < 0) lines.push(`Future date ${measurement.date}. Verify the date.`);
+        else {
+          lines.push(`Measured ${measurement.date} (${age} days ago).`);
+          if (age > 365) lines.push('This is over a year old. Ask for an update.');
+        }
+      }
+      const source = typeof measurement.source === 'string' ? measurement.source.trim() : '';
+      lines.push(source ? `Source: ${source}` : 'Source unknown. Ask how it was measured and whether a photo is available.');
+    }
+    return {name: spec.name, lines};
+  });
+}
+
+if (typeof module !== 'undefined') module.exports = {compare, specs, parseMeasurementDate};

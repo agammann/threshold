@@ -9,6 +9,15 @@ FIELDS = {"width_cm": ("minimum clear width", "min"), "step_cm": ("maximum step 
 def valid_number(value):
     return (not isinstance(value, bool) and isinstance(value, (int, float)) and value >= 0 and (isinstance(value, int) or math.isfinite(value)))
 
+def measurement_date(value):
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = date.fromisoformat(value)
+    except ValueError:
+        return None
+    return parsed if parsed.isoformat() == value else None
+
 def compare(card, criteria, today=None):
     if not isinstance(card, dict) or not isinstance(criteria, dict):
         raise ValueError('route and criteria must be objects')
@@ -24,22 +33,33 @@ def compare(card, criteria, today=None):
         value = measurement.get('value') if measurement is not None else None
         if value is not None and not valid_number(value):
             raise ValueError(f'{key}: invalid measurement')
+        parts = []
         if criterion is None:
-            result.append(f'{label}: no criterion supplied; consider whether to ask about it.')
-            continue
+            parts.append('no criterion supplied. Consider whether to ask about it.')
         if value is None:
-            result.append(f'{label}: unknown; ask the venue for a measurement and date.')
-            continue
-        try:
-            d = date.fromisoformat(measurement.get('date'))
-            age = (today-d).days
-            provenance = f'measured {d} ({age} days ago)' if age >= 0 else f'future date {d}; verify'
-        except (ValueError, TypeError):
-            provenance = 'date unknown; ask when measured'
-        source = measurement.get('source') or 'source unknown; ask how measured'
-        meets = value >= criterion if direction == 'min' else value <= criterion
-        status = 'within' if meets else 'outside'
-        result.append(f'{label}: {value} cm is {status} your {criterion} cm criterion; {provenance}; {source}. Confirm before visiting.')
+            parts.append('unknown measurement. Ask the venue for a measurement and date.')
+        else:
+            if criterion is not None:
+                meets = value >= criterion if direction == 'min' else value <= criterion
+                status = 'within' if meets else 'outside'
+                parts.append(f'{value} cm is {status} your {criterion} cm criterion.')
+            else:
+                parts.append(f'Measurement recorded as {value} cm.')
+            measured = measurement_date(measurement.get('date'))
+            if measured is None:
+                parts.append('date unknown or invalid. Ask when this was measured.')
+            else:
+                age = (today - measured).days
+                if age < 0:
+                    parts.append(f'future date {measured}. Verify the date.')
+                else:
+                    parts.append(f'Measured {measured} ({age} days ago).')
+                    if age > 365:
+                        parts.append('This is over a year old. Ask for an update.')
+            source = measurement.get('source')
+            parts.append(f'Source: {source.strip()}.' if isinstance(source, str) and source.strip() else 'source unknown. Ask how it was measured.')
+            parts.append('Confirm before visiting.')
+        result.append(f"{label}: {' '.join(parts)}")
     return result
 
 def reject_constant(value):
