@@ -3,7 +3,55 @@ for(const s of specs){const row=document.createElement('div');row.className='row
 const get=id=>document.getElementById(id).value.trim();
 function read(){const card={route:get('route')};const criteria={};for(const s of specs){const value=get(s.key+'-value'), date=get(s.key+'-date'), source=get(s.key+'-source'), criterion=get(s.key+'-criterion');card[s.key]=value===''&&!date&&!source?null:{value:value===''?null:Number(value),date,source};criteria[s.key]=criterion===''?null:Number(criterion)}return {card,criteria}}
 function render(){const {card,criteria}=read();output.replaceChildren();const heading=document.createElement('p');heading.textContent=`Route: ${card.route||'Not specified — ask which route was measured'}. Confirm the whole route and other needs with the venue.`;output.append(heading);for(const item of compare(card,criteria)){const div=document.createElement('div');div.className='result';const h=document.createElement('strong');h.textContent=item.name;div.append(h);for(const line of item.lines){const p=document.createElement('p');p.textContent=line;div.append(p)}output.append(div)}}
-document.querySelector('#form').addEventListener('input',render);document.querySelector('#print').addEventListener('click',()=>window.print());
+const fileInput = document.querySelector('#file');
+const importStatus = document.querySelector('#import-status');
+let routeRevision = 0;
+document.querySelector('#form').addEventListener('input', event => {
+  if (event.target === fileInput) return;
+  if (!event.target.id.endsWith('-criterion')) {
+    routeRevision++;
+    importStatus.textContent = '';
+  }
+  render();
+});
+document.querySelector('#print').addEventListener('click',()=>window.print());
 document.querySelector('#export').addEventListener('click',()=>{const {card}=read();const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(card,null,2)],{type:'application/json'}));a.download='threshold-route.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)});
-document.querySelector('#file').addEventListener('change',async e=>{try{const card=JSON.parse(await e.target.files[0].text());if(!card||typeof card!=='object'||Array.isArray(card))throw Error('Expected a route object');for(const s of specs){const m=card[s.key];if(m!==null&&m!==undefined&&(typeof m!=='object'||Array.isArray(m)))throw Error('Invalid measurement object');if(m&&m.value!=null&&(typeof m.value!=='number'||!Number.isFinite(m.value)||m.value<0))throw Error('Invalid measurement value');if(m&&m.date&&(!/^\d{4}-\d{2}-\d{2}$/.test(m.date)||Number.isNaN(Date.parse(m.date))||new Date(m.date).toISOString().slice(0,10)!==m.date))throw Error('Invalid measurement date');if(m&&m.source!=null&&typeof m.source!=='string')throw Error('Invalid source')}if(card.route!=null&&typeof card.route!=='string')throw Error('Invalid route name');document.querySelector('#route').value=card.route||'';for(const s of specs){const m=card[s.key]||{};for(const part of ['value','date','source'])document.getElementById(s.key+'-'+part).value=m[part]??''}render()}catch(err){alert('Could not import route: '+err.message)}finally{e.target.value=''}});render();
+fileInput.addEventListener('change', async () => {
+  const selected = fileInput.files[0];
+  const requested = ++routeRevision;
+  importStatus.textContent = '';
+  if (!selected) return;
+  const isCurrent = () => requested === routeRevision && fileInput.files[0] === selected;
+  try {
+    const text = await selected.text();
+    if (!isCurrent()) return;
+    const card = JSON.parse(text);
+    if (!card || typeof card !== 'object' || Array.isArray(card)) throw Error('Expected a route object.');
+    if (card.route != null && typeof card.route !== 'string') throw Error('Invalid route name.');
+    for (const {key, name} of specs) {
+      const measurement = card[key];
+      if (measurement == null) continue;
+      if (typeof measurement !== 'object' || Array.isArray(measurement)) throw Error(`${name} needs a measurement object.`);
+      if (measurement.value != null && (typeof measurement.value !== 'number' || !Number.isFinite(measurement.value) || measurement.value < 0)) {
+        throw Error(`${name} needs a non-negative measurement.`);
+      }
+      if (measurement.date != null && measurement.date !== '' && parseMeasurementDate(measurement.date) === null) {
+        throw Error(`${name} has an invalid measurement date.`);
+      }
+      if (measurement.source != null && typeof measurement.source !== 'string') throw Error(`${name} needs a text source.`);
+    }
+    document.querySelector('#route').value = card.route ?? '';
+    for (const {key} of specs) {
+      const measurement = card[key] ?? {};
+      for (const part of ['value', 'date', 'source']) document.getElementById(`${key}-${part}`).value = measurement[part] ?? '';
+    }
+    render();
+    importStatus.textContent = 'Route imported.';
+  } catch (error) {
+    if (isCurrent()) importStatus.textContent = `Could not import route. ${error.message}`;
+  } finally {
+    if (fileInput.files[0] === selected) fileInput.value = '';
+  }
+});
+render();
 

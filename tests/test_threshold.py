@@ -19,6 +19,20 @@ class Tests(unittest.TestCase):
   self.assertIn('within',compare({'step_cm':{'value':0}},{'step_cm':0})[1])
  def test_provenance(self):
   r=compare({'width_cm':{'value':80,'date':'2099-01-01'},'step_cm':{'value':0}}, {'width_cm':80,'step_cm':0}, date(2026,1,1)); self.assertIn('future date',r[0]); self.assertIn('source unknown',r[0]); self.assertIn('date unknown',r[1])
+ def test_stale_measurement_and_unknown_are_reported_without_criteria(self):
+  result = compare({'width_cm': {'value': 90, 'date': '2020-01-15', 'source': 'Fictional tape'}}, {}, date(2026, 1, 1))
+  for text in ('no criterion', '90 cm', 'over a year old', 'Fictional tape'):
+   self.assertIn(text, result[0])
+  self.assertNotIn('within', result[0])
+  self.assertIn('unknown measurement', result[2])
+
+ def test_non_calendar_date_or_non_text_source_is_unconfirmed(self):
+  for raw_date in ('20260101', '2026-02-30', '0000-01-01', 20260101):
+   with self.subTest(raw_date=raw_date):
+    result = compare({'width_cm': {'value': 90, 'date': raw_date, 'source': '  '}}, {'width_cm': 80}, date(2026, 1, 1))
+    self.assertIn('date unknown or invalid', result[0])
+    self.assertIn('source unknown', result[0])
+
  def test_invalid_measurements_even_without_criterion(self):
   for v in [-1,True,'90',float('nan'),float('inf'),float('-inf')]:
    with self.subTest(v=v):
